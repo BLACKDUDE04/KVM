@@ -1,58 +1,41 @@
-import { desc } from "drizzle-orm";
-import { getDb } from "../../../../../db";
-import { notes } from "../../../db/schema";
+import { credentialsConfigured, getSessionUser } from "../../../../lib/auth";
+import { ensureSchema } from "../../data/route";
 
-function toRouteErrorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : "Unexpected error";
-  const detail =
-    error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
-  const combined = `${message}\n${detail}`;
-
-  if (combined.includes("no such table") || combined.includes('from "notes"')) {
-    return "The notes table is unavailable. Generate the migration locally with `npm run db:generate`, then deploy so the platform can apply the generated SQL to the real D1 database.";
-  }
-
-  return message;
-}
-
-export async function GET() {
-  try {
-    const db = getDb();
-    const rows = await db
-      .select()
-      .from(notes)
-      .orderBy(desc(notes.createdAt), desc(notes.id))
-      .limit(20);
-
-    return Response.json({ notes: rows });
-  } catch (error) {
-    return Response.json(
-      { error: toRouteErrorMessage(error) },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const payload = (await request.json()) as {
-      title?: string;
-      content?: string;
+function sessionError(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : "Unable to check login";
+  if (/HTTP error! status: (400|401|403)/i.test(message))
+    return {
+      code: "DATABASE_CONNECTION_REJECTED",
+      error:
+        "Turso rejected the database connection. Check that TURSO_DATABASE_URL and TURSO_AUTH_TOKEN are copied from the same database and are available to Netlify Functions.",
     };
-    const title = payload.title?.trim() ?? "";
-    const content = payload.content?.trim() ?? "";
+  if (/fetch failed|network|timeout|timed out/i.test(message))
+    return {
+      code: "DATABASE_UNREACHABLE",
+      error:
+        "BillFlow cannot reach Turso. Check the database URL and try again.",
+    };
+  return { code: "SESSION_CHECK_FAILED", error: message };
+}
 
-    if (!title) {
-      return Response.json({ error: "title is required" }, { status: 400 });
-    }
-
-    const db = getDb();
-    const [note] = await db.insert(notes).values({ title, content }).returning();
-    return Response.json({ note }, { status: 201 });
+export async function GET(request: Request) {
+  try {
+    await ensureSchema();
+    const [user, configured] = await Promise.all([
+      getSessionUser(request),
+      credentialsConfigured(),
+    ]);
+    return Response.json({
+      authenticated: Boolean(user),
+      needsSetup: !configured,
+      user: user || undefined,
+    });
   } catch (error) {
+    const failure = sessionError(error);
     return Response.json(
-      { error: toRouteErrorMessage(error) },
-      { status: 500 }
+      failure,
+      { status: 503 },
     );
   }
 }
