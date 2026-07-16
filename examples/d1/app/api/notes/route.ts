@@ -1,4 +1,4 @@
-import { credentialsConfigured, getSessionUser } from "../../../../lib/auth";
+import { credentialsConfigured, getSessionUser } from "../../../../../lib/auth";
 import { ensureSchema } from "../../data/route";
 
 function sessionError(error: unknown) {
