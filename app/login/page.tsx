@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-type Mode = "loading" | "login" | "setup";
+type Mode = "loading" | "login" | "setup" | "unavailable";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("loading"),
@@ -10,7 +10,7 @@ export default function LoginPage() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
 
-  useEffect(() => {
+  const checkSession = useCallback(() => {
     fetch("/api/auth/session", { cache: "no-store" })
       .then(async (response) => {
         const result = await response.json();
@@ -23,9 +23,13 @@ export default function LoginPage() {
         setError(
           reason instanceof Error ? reason.message : "Unable to open login",
         );
-        setMode("login");
+        setMode("unavailable");
       });
   }, []);
+
+  useEffect(() => {
+    checkSession();
+  }, [checkSession]);
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -114,6 +118,30 @@ export default function LoginPage() {
               <span className="auth-spinner" />
               <h2>Opening secure login</h2>
               <p>Checking your BillFlow workspace…</p>
+            </div>
+          ) : mode === "unavailable" ? (
+            <div className="auth-loading">
+              <span aria-hidden="true">!</span>
+              <p className="auth-eyebrow">DATABASE CONNECTION</p>
+              <h2>BillFlow needs attention</h2>
+              <p>
+                The secure login cannot open until the database connection is
+                available.
+              </p>
+              <div className="auth-error" role="alert">
+                {error}
+              </div>
+              <button
+                className="auth-submit"
+                type="button"
+                onClick={() => {
+                  setMode("loading");
+                  setError("");
+                  checkSession();
+                }}
+              >
+                Check connection again
+              </button>
             </div>
           ) : (
             <>
